@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AirSense — Urban Air Quality Intelligence</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e1a;
+  --surface:#111827;
+  --surface2:#1a2235;
+  --surface3:#222d42;
+  --border:#1e2d45;
+  --border2:#2a3d5a;
+  --text:#e8edf5;
+  --text2:#8fa4bf;
+  --text3:#4d6280;
+  --accent:#00d4aa;
+  --accent2:#0099ff;
+  --warn:#f59e0b;
+  --danger:#ef4444;
+  --good:#10b981;
+  --font:'Inter',sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+/* ── TOP BAR ── */
+#topbar{height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:16px;flex-shrink:0;z-index:1000}
+.logo{font-size:17px;font-weight:700;color:var(--accent);letter-spacing:-0.5px}
+.logo span{color:var(--text2);font-weight:400}
+.live-badge{background:#ef444420;border:1px solid #ef444440;color:#ef4444;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:flex;align-items:center;gap:4px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.topbar-stats{display:flex;gap:20px;margin-left:auto;align-items:center}
+.ts-item{text-align:right}
+.ts-val{font-size:15px;font-weight:600;color:var(--accent)}
+.ts-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
+.city-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:4px 10px;border-radius:6px;font-size:13px;cursor:pointer}
+.city-select option{background:var(--surface)}
+/* ── MAIN LAYOUT ── */
+#main{display:flex;flex:1;overflow:hidden}
+/* ── LEFT PANEL ── */
+#left{width:300px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.panel-tabs{display:flex;border-bottom:1px solid var(--border)}
+.ptab{flex:1;padding:10px 0;text-align:center;font-size:12px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.ptab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.panel-content{flex:1;overflow-y:auto;padding:12px}
+.panel-content::-webkit-scrollbar{width:4px}
+.panel-content::-webkit-scrollbar-track{background:transparent}
+.panel-content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+/* ── STATION CARDS ── */
+.station-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s}
+.station-card:hover,.station-card.selected{border-color:var(--accent)}
+.sc-header{display:flex;justify-content:space-between;align-items:flex-start}
+.sc-name{font-size:13px;font-weight:500;color:var(--text)}
+.sc-aqi{font-size:20px;font-weight:700}
+.sc-category{font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.05em}
+.sc-params{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+.sc-param{font-size:11px;color:var(--text2);background:var(--surface3);padding:2px 6px;border-radius:3px}
+/* ── AQI COLORS ── */
+.aqi-good{color:#10b981}.aqi-good-bg{background:#10b98120;color:#10b981}
+.aqi-moderate{color:#f59e0b}.aqi-moderate-bg{background:#f59e0b20;color:#f59e0b}
+.aqi-poor{color:#f97316}.aqi-poor-bg{background:#f9731620;color:#f97316}
+.aqi-vpoor{color:#ef4444}.aqi-vpoor-bg{background:#ef444420;color:#ef4444}
+.aqi-severe{color:#9333ea}.aqi-severe-bg{background:#9333ea20;color:#9333ea}
+/* ── MAP ── */
+#map-container{flex:1;position:relative;display:flex;flex-direction:column}
+#map{flex:1}
+#map-controls{position:absolute;top:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:6px}
+.map-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.map-btn:hover,.map-btn.active{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+#time-scrubber{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:500;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:12px;min-width:360px}
+.scrub-label{font-size:11px;color:var(--text3);white-space:nowrap}
+#hour-slider{flex:1;accent-color:var(--accent)}
+.scrub-time{font-size:13px;font-weight:600;color:var(--accent);font-family:var(--mono);min-width:60px}
+/* ── RIGHT PANEL ── */
+#right{width:320px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.rpanel-title{padding:14px 16px 0;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em}
+/* ── ATTRIBUTION BOX ── */
+#attribution-box{margin:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;flex-shrink:0}
+.attr-ward{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
+.attr-aqi-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.attr-aqi-num{font-size:28px;font-weight:700}
+.attr-badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px}
+.attr-sources{margin-bottom:10px}
+.attr-src-title{font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em}
+.attr-src-bar{margin-bottom:5px}
+.attr-src-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px}
+.attr-bar-track{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden}
+.attr-bar-fill{height:100%;border-radius:2px;transition:width 0.6s ease}
+.attr-insight{background:var(--surface3);border-radius:6px;padding:10px;font-size:12px;color:var(--text2);line-height:1.6;border-left:3px solid var(--accent)}
+.attr-insight-label{font-size:10px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px}
+/* ── FORECAST CHART ── */
+#forecast-box{margin:0 12px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;flex-shrink:0}
+.fc-title{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:10px}
+#forecast-chart-container{height:130px;position:relative}
+/* ── ENFORCEMENT LIST ── */
+#enforcement-box{margin:0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;flex:1;overflow:hidden;display:flex;flex-direction:column}
+.enf-title{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px}
+#enf-list{flex:1;overflow-y:auto}
+#enf-list::-webkit-scrollbar{width:3px}
+#enf-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.enf-item{background:var(--surface3);border-radius:6px;padding:8px 10px;margin-bottom:6px;border-left:3px solid transparent;cursor:pointer;transition:all .15s}
+.enf-item:hover{border-left-color:var(--accent);background:var(--surface2)}
+.enf-item.high{border-left-color:var(--danger)}
+.enf-item.medium{border-left-color:var(--warn)}
+.enf-row{display:flex;justify-content:space-between;align-items:flex-start}
+.enf-name{font-size:12px;font-weight:500;color:var(--text)}
+.enf-rank{font-size:10px;font-weight:700;color:var(--text3);font-family:var(--mono)}
+.enf-type{font-size:10px;color:var(--text3);margin-top:2px}
+.enf-impact{font-size:11px;color:var(--good);margin-top:4px}
+/* ── MODAL ── */
+#modal-overlay{position:fixed;inset:0;background:#00000080;z-index:2000;display:none;align-items:center;justify-content:center}
+#modal-overlay.open{display:flex}
+#modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;width:520px;max-height:80vh;overflow-y:auto;padding:24px}
+.modal-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:4px}
+.modal-sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+.modal-section{margin-bottom:16px}
+.modal-section h4{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.detail-card{background:var(--surface2);border-radius:8px;padding:10px 12px;border:1px solid var(--border)}
+.dc-label{font-size:11px;color:var(--text3);margin-bottom:2px}
+.dc-val{font-size:16px;font-weight:600;color:var(--text)}
+.lang-pills{display:flex;gap:6px;flex-wrap:wrap}
+.lang-pill{background:var(--surface3);border:1px solid var(--border2);border-radius:4px;padding:4px 10px;font-size:12px}
+.lang-pill .lang{font-size:10px;color:var(--text3)}
+.lang-pill .msg{color:var(--text2)}
+.pdf-btn{background:var(--accent);color:#000;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;width:100%}
+.close-btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text2);padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;margin-top:16px;width:100%}
+/* ── TOOLTIPS ── */
+.custom-tooltip{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;min-width:160px;pointer-events:none}
+.ct-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px}
+.ct-aqi{font-size:22px;font-weight:700;margin-bottom:2px}
+.ct-cat{font-size:11px;font-weight:600}
+.ct-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:4px}
+/* ── SECTION TABS ── */
+.pane{display:none}
+.pane.active{display:block}
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s}
+.load-logo{font-size:32px;font-weight:700;color:var(--accent)}
+.load-sub{font-size:14px;color:var(--text2)}
+.load-bar{width:200px;height:2px;background:var(--surface2);border-radius:1px;overflow:hidden}
+.load-fill{height:100%;background:var(--accent);border-radius:1px;animation:load 1.8s ease forwards}
+@keyframes load{0%{width:0}100%{width:100%}}
+/* ── LEGEND ── */
+#legend{position:absolute;bottom:60px;left:12px;z-index:500;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 12px}
+.leg-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+.leg-row{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.leg-dot{width:10px;height:10px;border-radius:50%}
+.leg-label{font-size:11px;color:var(--text2)}
+/* fix leaflet dark */
+.leaflet-container{background:#0d1520}
+.leaflet-tile{filter:brightness(0.7) saturate(0.8)}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="load-logo">AirSense</div>
+  <div class="load-sub">Connecting to live data sources...</div>
+  <div class="load-bar"><div class="load-fill"></div></div>
+</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">Air<span>Sense</span></div>
+  <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+  <select class="city-select" id="city-select" onchange="switchCity(this.value)">
+    <option value="bengaluru">Bengaluru</option>
+    <option value="delhi">Delhi</option>
+    <option value="mumbai">Mumbai</option>
+    <option value="kolkata">Kolkata</option>
+  </select>
+  <div class="topbar-stats">
+    <div class="ts-item">
+      <div class="ts-val" id="stat-avg-aqi">--</div>
+      <div class="ts-label">City AQI avg</div>
+    </div>
+    <div class="ts-item">
+      <div class="ts-val" id="stat-worst">--</div>
+      <div class="ts-label">Worst ward</div>
+    </div>
+    <div class="ts-item">
+      <div class="ts-val" id="stat-stations">8</div>
+      <div class="ts-label">Stations live</div>
+    </div>
+    <div class="ts-item">
+      <div class="ts-val" id="stat-time">--:--</div>
+      <div class="ts-label">Last updated</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT PANEL -->
+  <div id="left">
+    <div class="panel-tabs">
+      <div class="ptab active" onclick="switchTab('stations',this)">Stations</div>
+      <div class="ptab" onclick="switchTab('alerts',this)">Alerts</div>
+      <div class="ptab" onclick="switchTab('trends',this)">Trends</div>
+    </div>
+    <div class="panel-content">
+      <div id="pane-stations" class="pane active"></div>
+      <div id="pane-alerts" class="pane"></div>
+      <div id="pane-trends" class="pane"></div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-container">
+    <div id="map"></div>
+    <div id="map-controls">
+      <button class="map-btn active" onclick="setLayer('aqi',this)">AQI Heatmap</button>
+      <button class="map-btn" onclick="setLayer('attribution',this)">Source Attribution</button>
+      <button class="map-btn" onclick="setLayer('forecast',this)">24h Forecast</button>
+      <button class="map-btn" onclick="setLayer('enforcement',this)">Enforcement</button>
+    </div>
+    <div id="legend">
+      <div class="leg-title">AQI Index</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#10b981"></div><div class="leg-label">Good (0–50)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div><div class="leg-label">Moderate (51–100)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f97316"></div><div class="leg-label">Poor (101–200)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ef4444"></div><div class="leg-label">Very Poor (201–300)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#9333ea"></div><div class="leg-label">Severe (300+)</div></div>
+    </div>
+    <div id="time-scrubber">
+      <div class="scrub-label">Forecast hour</div>
+      <input type="range" id="hour-slider" min="0" max="23" value="0" oninput="scrubTime(this.value)"/>
+      <div class="scrub-time" id="scrub-label">Now</div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right">
+    <div class="rpanel-title">Attribution · <span id="selected-ward-name">Click a station</span></div>
+    <div id="attribution-box">
+      <div class="attr-ward" id="attr-ward">Select a station on the map</div>
+      <div class="attr-aqi-row">
+        <div class="attr-aqi-num" id="attr-aqi">--</div>
+        <div class="attr-badge" id="attr-badge">--</div>
+      </div>
+      <div class="attr-sources" id="attr-sources"></div>
+      <div class="attr-insight">
+        <div class="attr-insight-label">AI Attribution</div>
+        <div id="attr-text">Select a monitoring station to see source attribution and AI-generated insights.</div>
+      </div>
+    </div>
+
+    <div id="forecast-box">
+      <div class="fc-title">24-hour AQI forecast — <span id="fc-ward">city average</span></div>
+      <div id="forecast-chart-container">
+        <canvas id="forecast-chart"></canvas>
+      </div>
+    </div>
+
+    <div id="enforcement-box">
+      <div class="enf-title">Top enforcement priorities today</div>
+      <div id="enf-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-sub" id="modal-sub"></div>
+    <div id="modal-body"></div>
+    <button class="close-btn" onclick="document.getElementById('modal-overlay').classList.remove('open')">Close</button>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────
+// DATA LAYER — realistic Bengaluru AQI data (CPCB-structured)
+// ────────────────────────────────────────────────────────────
+const CITIES = {
+  bengaluru: { center: [12.9716, 77.5946], zoom: 12, name: 'Bengaluru' },
+  delhi:     { center: [28.6139, 77.2090], zoom: 11, name: 'Delhi' },
+  mumbai:    { center: [19.0760, 72.8777], zoom: 12, name: 'Mumbai' },
+  kolkata:   { center: [22.5726, 88.3639], zoom: 12, name: 'Kolkata' },
+};
+
+const STATIONS_BY_CITY = {
+  bengaluru: [
+    { id:'BLR01', name:'Hebbal', ward:'Hebbal', lat:13.0358, lng:77.5910, pm25:142, pm10:198, no2:48, co:1.2, o3:62, so2:12, aqi:172, trend:[180,175,165,160,155,148,142] },
+    { id:'BLR02', name:'BTM Layout', ward:'BTM Layout', lat:12.9166, lng:77.6101, pm25:88, pm10:124, no2:34, co:0.8, o3:44, so2:8, aqi:108, trend:[95,92,90,88,86,88,108] },
+    { id:'BLR03', name:'Peenya Industrial', ward:'Peenya', lat:13.0297, lng:77.5198, pm25:215, pm10:310, no2:72, co:2.1, o3:38, so2:28, aqi:278, trend:[240,255,260,265,270,275,278] },
+    { id:'BLR04', name:'Silk Board', ward:'Silk Board', lat:12.9175, lng:77.6233, pm25:118, pm10:162, no2:56, co:1.4, o3:52, so2:14, aqi:148, trend:[130,135,138,140,142,145,148] },
+    { id:'BLR05', name:'Marathahalli', ward:'Marathahalli', lat:12.9591, lng:77.6974, pm25:94, pm10:138, no2:41, co:0.9, o3:48, so2:9, aqi:118, trend:[105,102,98,95,94,110,118] },
+    { id:'BLR06', name:'Sankey Tank', ward:'Sadashivanagar', lat:13.0027, lng:77.5773, pm25:54, pm10:78, no2:22, co:0.5, o3:35, so2:5, aqi:68, trend:[72,70,68,65,63,60,68] },
+    { id:'BLR07', name:'Whitefield', ward:'Whitefield', lat:12.9698, lng:77.7499, pm25:76, pm10:108, no2:28, co:0.7, o3:40, so2:7, aqi:92, trend:[88,86,84,80,78,82,92] },
+    { id:'BLR08', name:'Yelahanka', ward:'Yelahanka', lat:13.1006, lng:77.5963, pm25:105, pm10:148, no2:38, co:1.0, o3:46, so2:11, aqi:132, trend:[118,122,125,128,130,131,132] },
+  ],
+  delhi: [
+    { id:'DEL01', name:'Anand Vihar', ward:'Anand Vihar', lat:28.6469, lng:77.3159, pm25:285, pm10:420, no2:88, co:3.2, o3:58, so2:42, aqi:342, trend:[310,318,325,330,335,340,342] },
+    { id:'DEL02', name:'RK Puram', ward:'RK Puram', lat:28.5634, lng:77.1801, pm25:198, pm10:290, no2:65, co:2.1, o3:44, so2:28, aqi:248, trend:[220,228,235,240,244,246,248] },
+    { id:'DEL03', name:'Punjabi Bagh', ward:'Punjabi Bagh', lat:28.6648, lng:77.1328, pm25:245, pm10:358, no2:78, co:2.8, o3:52, so2:35, aqi:298, trend:[265,272,278,284,290,295,298] },
+    { id:'DEL04', name:'Dwarka', ward:'Dwarka', lat:28.5823, lng:77.0587, pm25:168, pm10:245, no2:54, co:1.8, o3:40, so2:22, aqi:212, trend:[185,190,195,200,205,208,212] },
+    { id:'DEL05', name:'Nehru Nagar', ward:'Nehru Nagar', lat:28.5672, lng:77.2569, pm25:224, pm10:328, no2:71, co:2.5, o3:49, so2:31, aqi:272, trend:[248,254,260,264,268,270,272] },
+    { id:'DEL06', name:'Shadipur', ward:'Shadipur', lat:28.6448, lng:77.1532, pm25:262, pm10:385, no2:82, co:2.9, o3:55, so2:38, aqi:318, trend:[288,296,302,308,312,315,318] },
+  ],
+  mumbai: [
+    { id:'MUM01', name:'Bandra Kurla', ward:'BKC', lat:19.0596, lng:72.8656, pm25:98, pm10:145, no2:52, co:1.1, o3:58, so2:15, aqi:124, trend:[112,115,118,120,122,123,124] },
+    { id:'MUM02', name:'Worli', ward:'Worli', lat:19.0130, lng:72.8175, pm25:118, pm10:172, no2:62, co:1.4, o3:48, so2:18, aqi:148, trend:[132,136,140,143,145,147,148] },
+    { id:'MUM03', name:'Mazgaon', ward:'Mazgaon', lat:18.9749, lng:72.8417, pm25:142, pm10:208, no2:71, co:1.7, o3:42, so2:22, aqi:178, trend:[158,162,166,170,174,176,178] },
+    { id:'MUM04', name:'Colaba', ward:'Colaba', lat:18.9067, lng:72.8147, pm25:72, pm10:105, no2:38, co:0.8, o3:65, so2:10, aqi:88, trend:[82,80,78,76,75,80,88] },
+    { id:'MUM05', name:'Andheri East', ward:'Andheri', lat:19.1136, lng:72.8697, pm25:135, pm10:195, no2:68, co:1.6, o3:44, so2:20, aqi:168, trend:[148,152,157,161,164,166,168] },
+  ],
+  kolkata: [
+    { id:'KOL01', name:'Rabindra Sarani', ward:'North Kolkata', lat:22.5855, lng:88.3720, pm25:165, pm10:238, no2:62, co:1.8, o3:38, so2:24, aqi:208, trend:[185,190,195,200,203,206,208] },
+    { id:'KOL02', name:'Victoria', ward:'Central', lat:22.5448, lng:88.3426, pm25:128, pm10:185, no2:48, co:1.3, o3:42, so2:18, aqi:162, trend:[148,152,155,158,160,161,162] },
+    { id:'KOL03', name:'Jadavpur', ward:'Jadavpur', lat:22.4997, lng:88.3718, pm25:148, pm10:215, no2:56, co:1.5, o3:35, so2:21, aqi:186, trend:[165,170,175,178,182,184,186] },
+    { id:'KOL04', name:'Beliaghata', ward:'East Kolkata', lat:22.5590, lng:88.3950, pm25:182, pm10:265, no2:69, co:2.0, o3:32, so2:28, aqi:228, trend:[205,210,215,218,222,225,228] },
+  ],
+};
+
+const ATTRIBUTION_DATA = {
+  'BLR01': { sources:[{name:'Construction — NH44 flyover',pct:42,color:'#ef4444'},{name:'Vehicular traffic (NH44)',pct:35,color:'#f97316'},{name:'Industrial (Hebbal industrial area)',pct:14,color:'#f59e0b'},{name:'Seasonal dust',pct:9,color:'#6b7280'}], insight:"PM2.5 spike (142 μg/m³) is 73% attributable to simultaneous flyover construction on NH44 and high truck traffic. Easterly winds at 14 km/h are channelling emissions toward residential zones. Construction permit #BBMP-2024-1182 is active. Recommend night-ban on construction heavy vehicles and dust suppression protocol.", kannada:"ಹೆಬ್ಬಾಳ ವಾಯು ಮಾಲಿನ್ಯ: NH44 ನಿರ್ಮಾಣ ಮತ್ತು ವಾಹನ ದಟ್ಟಣೆಯಿಂದ ಅತಿ ಹೆಚ್ಚು ಮಾಲಿನ್ಯ" },
+  'BLR02': { sources:[{name:'Vehicle emissions',pct:58,color:'#f97316'},{name:'Road dust',pct:22,color:'#f59e0b'},{name:'Commercial cooking',pct:12,color:'#10b981'},{name:'Background',pct:8,color:'#6b7280'}], insight:"BTM Layout shows moderate AQI (108) driven primarily by heavy traffic congestion at BTM 2nd stage signal. PM10 levels elevated due to road resurfacing work on Outer Ring Road. Pattern consistent with morning peak hours. Staggered office timings would reduce peak emissions by est. 18%.", kannada:"BTM ಲೇಔಟ್: ವಾಹನ ಹೊಗೆ ಮತ್ತು ರಸ್ತೆ ಧೂಳಿನಿಂದ ಮಧ್ಯಮ ಮಟ್ಟದ ಮಾಲಿನ್ಯ" },
+  'BLR03': { sources:[{name:'Industrial stack emissions',pct:52,color:'#9333ea'},{name:'Vehicular (freight)',pct:28,color:'#ef4444'},{name:'Biomass burning',pct:12,color:'#f97316'},{name:'Secondary aerosols',pct:8,color:'#6b7280'}], insight:"CRITICAL: Peenya Industrial Area shows Very Poor AQI (278). Satellite thermal anomaly detected at coordinates 13.0297°N 77.5198°E indicating active biomass burning near industrial cluster. Three unlicensed units (IDs: KA-IND-4421, 4438, 4512) detected without stack emission compliance documentation. Immediate KSPCB inspection recommended.", kannada:"ಪೀಣ್ಯ ಕೈಗಾರಿಕಾ ಪ್ರದೇಶ: ತೀವ್ರ ವಾಯು ಮಾಲಿನ್ಯ — ತಕ್ಷಣ ಕ್ರಮ ಅಗತ್ಯ" },
+  'BLR04': { sources:[{name:'Traffic congestion (Silk Board)',pct:65,color:'#ef4444'},{name:'Diesel vehicles',pct:20,color:'#f97316'},{name:'Road dust',pct:10,color:'#f59e0b'},{name:'Background',pct:5,color:'#6b7280'}], insight:"Silk Board junction is one of Bengaluru's most congested intersections. AQI of 148 correlates with 4-hour peak congestion window. NO2 elevated to 56 μg/m³, indicating high diesel vehicle concentration. BMTC bus fleet in this corridor has est. 34% pre-BS6 vehicles. Fleet modernisation would reduce NO2 by est. 25%.", kannada:"ಸಿಲ್ಕ್ ಬೋರ್ಡ್: ಭಾರೀ ಟ್ರಾಫಿಕ್ ಮತ್ತು ಡೀಸೆಲ್ ವಾಹನಗಳಿಂದ ಮಾಲಿನ್ಯ" },
+  'BLR05': { sources:[{name:'IT corridor traffic',pct:48,color:'#f97316'},{name:'Construction (Metro phase 3)',pct:30,color:'#ef4444'},{name:'Residential burning',pct:14,color:'#f59e0b'},{name:'Background',pct:8,color:'#6b7280'}], insight:"Marathahalli corridor shows elevated AQI (118) linked to Metro Phase 3 construction at Old Airport Road. Dust suppression systems at Site BLR-METRO-14 were found non-operational as of morning inspection. Construction activity + afternoon wind shift creating a pollution corridor toward Kadubeesanahalli.", kannada:"ಮರಾಠಹಳ್ಳಿ: ಮೆಟ್ರೋ ನಿರ್ಮಾಣ ಮತ್ತು IT ಟ್ರಾಫಿಕ್‌ನಿಂದ ಮಾಲಿನ್ಯ ಹೆಚ್ಚಳ" },
+  'BLR06': { sources:[{name:'Traffic (light)',pct:42,color:'#10b981'},{name:'Vegetation aerosols',pct:28,color:'#10b981'},{name:'Background',pct:20,color:'#6b7280'},{name:'Domestic sources',pct:10,color:'#f59e0b'}], insight:"Sankey Tank area maintains Good AQI (68), aided by tree canopy and proximity to the lake. PM2.5 within safe limits. This station serves as a clean-air reference for the city. Wind direction suggests pollution from Hebbal may encroach after 6 PM if winds shift NE.", kannada:"ಸ್ಯಾಂಕಿ ಟ್ಯಾಂಕ್: ಉತ್ತಮ ವಾಯು ಗುಣಮಟ್ಟ — ಸಂಜೆ ನಂತರ ಮೇಲ್ವಿಚಾರಣೆ ಅವಶ್ಯಕ" },
+  'BLR07': { sources:[{name:'IT campus generators',pct:38,color:'#f59e0b'},{name:'Road transport',pct:35,color:'#f97316'},{name:'Construction',pct:17,color:'#ef4444'},{name:'Background',pct:10,color:'#6b7280'}], insight:"Whitefield AQI (92) reflects moderate emissions from IT campus DG sets during power outages and growing traffic density on Whitefield Main Road. Three construction sites (permits: BBMP-W-2024-218, 219, 241) are active simultaneously. Satellite data shows dust plume extending 1.2 km southwest.", kannada:"ವೈಟ್‌ಫೀಲ್ಡ್: IT ಕ್ಯಾಂಪಸ್ ಜನರೇಟರ್ ಮತ್ತು ನಿರ್ಮಾಣ ಧೂಳಿನಿಂದ ಮಧ್ಯಮ ಮಾಲಿನ್ಯ" },
+  'BLR08': { sources:[{name:'Airport operations',pct:35,color:'#f59e0b'},{name:'Traffic (Bellary Road)',pct:32,color:'#f97316'},{name:'Construction (peripheral)',pct:22,color:'#ef4444'},{name:'Background',pct:11,color:'#6b7280'}], insight:"Yelahanka AQI (132) shows increasing trend over the past 72 hours. Airport expansion earthworks (BIAL Phase 3) are generating significant fugitive dust. Bellary Road truck movement peaks at night, causing nocturnal PM2.5 spikes. Night movement restrictions on heavy vehicles recommended.", kannada:"ಯಲಹಂಕ: ವಿಮಾನ ನಿಲ್ದಾಣ ನಿರ್ಮಾಣ ಮತ್ತು ಟ್ರಕ್ ಸಂಚಾರದಿಂದ ಮಾಲಿನ್ಯ ಹೆಚ್ಚಳ" },
+};
+
+const ENFORCEMENT_BY_CITY = {
+  bengaluru: [
+    { name:'Peenya Industrial Unit KA-IND-4421', type:'Industrial — unlicensed stack', impact:'~28 μg/m³ PM2.5 reduction', priority:'high', lat:13.0270, lng:77.5180, evidence:'Stack emission data missing for 47 days. Thermal satellite anomaly confirmed. On-site noise meter >85dB.', action:'Immediate shutdown notice + stack emission test mandate' },
+    { name:'NH44 Flyover Construction Site', type:'Construction dust — active', impact:'~18 μg/m³ PM2.5 reduction', priority:'high', lat:13.0350, lng:77.5900, evidence:'Dust suppression systems non-operational (last inspection 14 days ago). Wind speed >12 km/h — high dust risk.', action:'Order dust suppression restart within 2 hours or work stoppage' },
+    { name:'Silk Board Diesel Bus Cluster', type:'Fleet emissions check', impact:'~12 μg/m³ NO2 reduction', priority:'medium', lat:12.9175, lng:77.6233, evidence:'NO2 at 56 μg/m³, above safe limit. Pre-BS6 bus estimated at 34% of corridor fleet. PUC check pending.', action:'Spot PUC checks, ground non-compliant vehicles' },
+    { name:'Yelahanka Night Truck Movement', type:'Nocturnal emission source', impact:'~15 μg/m³ PM2.5 reduction', priority:'medium', lat:13.1006, lng:77.5963, evidence:'AQI spike pattern matches 10 PM–2 AM window correlating with heavy freight.', action:'Enforce night truck restriction on Bellary Road segment' },
+    { name:'Whitefield Metro Construction (BBMP-W-2024-218)', type:'Construction permit violation', impact:'~10 μg/m³ PM2.5 reduction', priority:'medium', lat:12.9700, lng:77.7480, evidence:'Dust suppression permit condition not met. Satellite dust plume 1.2 km radius detected.', action:'Issue notice, mandate 6-hourly water sprinkling schedule' },
+    { name:'Peenya Unit KA-IND-4512', type:'Industrial — biomass burning', impact:'~20 μg/m³ PM2.5 reduction', priority:'high', lat:13.0310, lng:77.5210, evidence:'Thermal anomaly from FIRMS satellite data. AQI correlation coefficient 0.91 with this site.', action:'Immediate cessation of biomass burning. Show-cause notice.' },
+  ],
+  delhi:[
+    { name:'Anand Vihar Truck Terminal', type:'Freight vehicle emissions', impact:'~45 μg/m³ PM2.5 reduction', priority:'high', lat:28.6469, lng:77.3159, evidence:'High NO2 (88 μg/m³). Truck movement 24hrs.', action:'Enforce entry restrictions, BS-VI compliance check' },
+    { name:'Wazirpur Industrial Area', type:'Industrial stack emissions', impact:'~35 μg/m³ PM2.5 reduction', priority:'high', lat:28.6955, lng:77.1640, evidence:'Multiple unlicensed units detected via satellite.', action:'DPCC inspection team deployment' },
+    { name:'Punjabi Bagh Crop Residue Burning', type:'Agricultural burning', impact:'~28 μg/m³ PM2.5 reduction', priority:'medium', lat:28.6648, lng:77.1328, evidence:'Satellite fire hotspot detected NW Delhi.', action:'Deploy district teams, issue stop-burn notices' },
+  ],
+  mumbai:[
+    { name:'Chembur Refinery', type:'Industrial stack', impact:'~22 μg/m³ PM2.5 reduction', priority:'high', lat:19.0596, lng:72.8656, evidence:'SO2 elevated. Stack emission log overdue.', action:'Stack emission audit mandated within 48 hrs' },
+    { name:'Mazgaon Port Trucks', type:'Freight diesel vehicles', impact:'~18 μg/m³ reduction', priority:'medium', lat:18.9749, lng:72.8417, evidence:'NOx elevated near port approach roads.', action:'Implement truck timing restrictions' },
+  ],
+  kolkata:[
+    { name:'Beliaghata Industrial Cluster', type:'Industrial emissions', impact:'~32 μg/m³ PM2.5 reduction', priority:'high', lat:22.5590, lng:88.3950, evidence:'PM10 at 265 μg/m³. Multiple stack violations detected.', action:'Emergency inspection, closure orders for non-compliant units' },
+  ],
+};
+
+// ─────────────────────────────────────
+// STATE
+// ─────────────────────────────────────
+let currentCity = 'bengaluru';
+let currentLayer = 'aqi';
+let selectedStation = null;
+let map = null;
+let markers = [];
+let forecastChart = null;
+let forecastHour = 0;
+
+// ─────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────
+function aqiColor(aqi) {
+  if(aqi<=50)return'#10b981';
+  if(aqi<=100)return'#f59e0b';
+  if(aqi<=200)return'#f97316';
+  if(aqi<=300)return'#ef4444';
+  return'#9333ea';
+}
+function aqiCategory(aqi) {
+  if(aqi<=50)return'Good';
+  if(aqi<=100)return'Moderate';
+  if(aqi<=200)return'Poor';
+  if(aqi<=300)return'Very Poor';
+  return'Severe';
+}
+function aqiClass(aqi) {
+  if(aqi<=50)return'aqi-good';
+  if(aqi<=100)return'aqi-moderate';
+  if(aqi<=200)return'aqi-poor';
+  if(aqi<=300)return'aqi-vpoor';
+  return'aqi-severe';
+}
+function aqiBgClass(aqi) { return aqiClass(aqi)+'-bg'; }
+function now() {
+  const d=new Date();
+  return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+}
+function generateForecast(baseAqi) {
+  const hours=[];const vals=[];const upper=[];const lower=[];
+  for(let i=0;i<24;i++){
+    const h=(new Date().getHours()+i)%24;
+    hours.push(h+':00');
+    const morningPeak=(h>=7&&h<=10)?1.15:1;
+    const eveningPeak=(h>=17&&h<=20)?1.20:1;
+    const night=(h>=22||h<=5)?0.80:1;
+    const noise=(Math.random()-0.5)*20;
+    const v=Math.max(20,Math.round(baseAqi*morningPeak*eveningPeak*night+noise));
+    vals.push(v);
+    upper.push(Math.round(v*1.12));
+    lower.push(Math.round(v*0.88));
+  }
+  return{hours,vals,upper,lower};
+}
+
+// ─────────────────────────────────────
+// INIT MAP
+// ─────────────────────────────────────
+function initMap() {
+  const city = CITIES[currentCity];
+  map = L.map('map', { zoomControl:true, attributionControl:false }).setView(city.center, city.zoom);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom:19, subdomains:'abcd'
+  }).addTo(map);
+  renderStations();
+}
+
+function renderStations() {
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  stations.forEach(st=>{
+    const col = aqiColor(st.aqi);
+    const icon = L.divIcon({
+      className:'',
+      html:`<div style="width:44px;height:44px;border-radius:50%;background:${col}22;border:2px solid ${col};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${col};font-family:Inter,sans-serif;cursor:pointer;transition:transform .15s;box-shadow:0 0 12px ${col}44">${st.aqi}</div>`,
+      iconSize:[44,44],iconAnchor:[22,22]
+    });
+    const m = L.marker([st.lat,st.lng],{icon}).addTo(map);
+    m.on('click',()=>selectStation(st.id));
+    markers.push(m);
+  });
+  if(currentLayer==='enforcement') renderEnforcementPins();
+}
+
+function renderEnforcementPins() {
+  const items = ENFORCEMENT_BY_CITY[currentCity]||[];
+  items.forEach(en=>{
+    const col = en.priority==='high'?'#ef4444':'#f59e0b';
+    const icon = L.divIcon({
+      className:'',
+      html:`<div style="width:32px;height:32px;border-radius:6px;background:${col}22;border:2px solid ${col};display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;box-shadow:0 0 8px ${col}44" title="${en.name}">⚠</div>`,
+      iconSize:[32,32],iconAnchor:[16,16]
+    });
+    const m = L.marker([en.lat,en.lng],{icon}).addTo(map);
+    m.bindPopup(`<div style="background:#1a2235;color:#e8edf5;border:1px solid #2a3d5a;border-radius:8px;padding:12px;min-width:200px;font-family:Inter,sans-serif;font-size:12px"><b style="font-size:13px">${en.name}</b><br><span style="color:#8fa4bf">${en.type}</span><br><br><span style="color:#00d4aa">Impact: ${en.impact}</span><br><br><span style="color:#f59e0b">Action: ${en.action}</span></div>`,{className:'dark-popup'});
+    markers.push(m);
+  });
+}
+
+// ─────────────────────────────────────
+// SELECT STATION
+// ─────────────────────────────────────
+function selectStation(id) {
+  selectedStation = id;
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  const st = stations.find(s=>s.id===id);
+  if(!st) return;
+
+  document.getElementById('selected-ward-name').textContent = st.ward;
+  document.getElementById('attr-ward').textContent = st.name + ' — ' + st.ward;
+  document.getElementById('attr-aqi').textContent = st.aqi;
+  document.getElementById('attr-aqi').className = 'attr-aqi-num ' + aqiClass(st.aqi);
+  const badge = document.getElementById('attr-badge');
+  badge.textContent = aqiCategory(st.aqi);
+  badge.className = 'attr-badge ' + aqiBgClass(st.aqi);
+
+  const attr = ATTRIBUTION_DATA[id];
+  if(attr) {
+    let srcHtml='';
+    attr.sources.forEach(s=>{
+      srcHtml+=`<div class="attr-src-bar">
+        <div class="attr-src-label"><span>${s.name}</span><span style="color:${s.color};font-weight:600">${s.pct}%</span></div>
+        <div class="attr-bar-track"><div class="attr-bar-fill" style="width:${s.pct}%;background:${s.color}"></div></div>
+      </div>`;
+    });
+    document.getElementById('attr-sources').innerHTML=`<div class="attr-src-title">Pollution source attribution</div>${srcHtml}`;
+    document.getElementById('attr-text').textContent = attr.insight;
+  }
+
+  // Forecast
+  document.getElementById('fc-ward').textContent = st.ward;
+  updateForecastChart(st.aqi);
+
+  // Station list highlight
+  document.querySelectorAll('.station-card').forEach(c=>c.classList.remove('selected'));
+  const card = document.querySelector(`.station-card[data-id="${id}"]`);
+  if(card) card.classList.add('selected');
+
+  map.panTo([st.lat, st.lng]);
+}
+
+// ─────────────────────────────────────
+// FORECAST CHART
+// ─────────────────────────────────────
+function updateForecastChart(baseAqi) {
+  const fc = generateForecast(baseAqi);
+  if(forecastChart) forecastChart.destroy();
+  const ctx = document.getElementById('forecast-chart').getContext('2d');
+  forecastChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: fc.hours,
+      datasets:[
+        { label:'Forecast', data:fc.vals, borderColor:'#00d4aa', backgroundColor:'#00d4aa15', fill:true, tension:0.4, pointRadius:2, pointHoverRadius:4, borderWidth:2 },
+        { label:'Upper', data:fc.upper, borderColor:'#00d4aa40', backgroundColor:'transparent', fill:'-1', tension:0.4, pointRadius:0, borderWidth:1, borderDash:[4,4] },
+        { label:'Lower', data:fc.lower, borderColor:'#00d4aa40', backgroundColor:'#00d4aa08', fill:'+1', tension:0.4, pointRadius:0, borderWidth:1, borderDash:[4,4] },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:{duration:600},
+      plugins:{legend:{display:false},tooltip:{
+        backgroundColor:'#111827',borderColor:'#1e2d45',borderWidth:1,
+        titleColor:'#e8edf5',bodyColor:'#8fa4bf',
+        callbacks:{label:(c)=>`AQI: ${c.parsed.y}`}
+      }},
+      scales:{
+        x:{ticks:{color:'#4d6280',font:{size:10},maxTicksLimit:8},grid:{color:'#1e2d4540'}},
+        y:{ticks:{color:'#4d6280',font:{size:10}},grid:{color:'#1e2d4540'},min:0}
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────
+// STATIONS LIST (left panel)
+// ─────────────────────────────────────
+function renderStationList() {
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  let html='';
+  stations.forEach(st=>{
+    html+=`<div class="station-card ${selectedStation===st.id?'selected':''}" data-id="${st.id}" onclick="selectStation('${st.id}')">
+      <div class="sc-header">
+        <div>
+          <div class="sc-name">${st.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${st.ward}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="sc-aqi ${aqiClass(st.aqi)}">${st.aqi}</div>
+          <div class="sc-category ${aqiBgClass(st.aqi)}">${aqiCategory(st.aqi)}</div>
+        </div>
+      </div>
+      <div class="sc-params">
+        <span class="sc-param">PM2.5: ${st.pm25}</span>
+        <span class="sc-param">PM10: ${st.pm10}</span>
+        <span class="sc-param">NO₂: ${st.no2}</span>
+        <span class="sc-param">O₃: ${st.o3}</span>
+      </div>
+    </div>`;
+  });
+  document.getElementById('pane-stations').innerHTML = html;
+
+  // Stats
+  const aqs = stations.map(s=>s.aqi);
+  const avg = Math.round(aqs.reduce((a,b)=>a+b,0)/aqs.length);
+  const worst = stations.reduce((a,b)=>a.aqi>b.aqi?a:b);
+  document.getElementById('stat-avg-aqi').textContent = avg;
+  document.getElementById('stat-avg-aqi').className = 'ts-val ' + aqiClass(avg);
+  document.getElementById('stat-worst').textContent = worst.ward;
+  document.getElementById('stat-stations').textContent = stations.length;
+  document.getElementById('stat-time').textContent = now();
+}
+
+// ─────────────────────────────────────
+// ALERTS PANEL
+// ─────────────────────────────────────
+function renderAlerts() {
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  const alerts = stations.filter(s=>s.aqi>150).sort((a,b)=>b.aqi-a.aqi);
+  let html = '';
+  if(alerts.length===0){
+    html='<div style="color:var(--text3);font-size:13px;text-align:center;margin-top:20px">No critical alerts for this city</div>';
+  }
+  alerts.forEach(st=>{
+    const attr = ATTRIBUTION_DATA[st.id];
+    html+=`<div class="station-card" onclick="selectStation('${st.id}')">
+      <div class="sc-header">
+        <div>
+          <div class="sc-name">⚠ ${st.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${aqiCategory(st.aqi)} — AQI ${st.aqi}</div>
+        </div>
+        <div class="sc-category ${aqiBgClass(st.aqi)}">${aqiCategory(st.aqi)}</div>
+      </div>
+      ${attr?`<div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5">${attr.insight.slice(0,100)}...</div>`:''}
+      ${attr?`<div style="font-size:11px;color:var(--text3);margin-top:6px;font-style:italic">${attr.kannada}</div>`:''}
+    </div>`;
+  });
+  document.getElementById('pane-alerts').innerHTML = html;
+}
+
+// ─────────────────────────────────────
+// TRENDS PANEL
+// ─────────────────────────────────────
+function renderTrends() {
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  let html='<div style="font-size:11px;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.05em">7-day AQI trend by station</div>';
+  stations.forEach(st=>{
+    const trend=st.trend;
+    const diff=trend[trend.length-1]-trend[0];
+    const arrow=diff>0?'↑':'↓';
+    const tcolor=diff>0?'var(--danger)':'var(--good)';
+    html+=`<div class="station-card" style="margin-bottom:8px" onclick="selectStation('${st.id}')">
+      <div class="sc-header" style="margin-bottom:6px">
+        <div class="sc-name">${st.name}</div>
+        <div style="font-size:13px;font-weight:600;color:${tcolor}">${arrow}${Math.abs(diff)}</div>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:36px">
+        ${trend.map(v=>{
+          const h=Math.round((v/350)*36);
+          return`<div style="flex:1;background:${aqiColor(v)};height:${h}px;border-radius:2px 2px 0 0;opacity:0.85"></div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:3px"><span>7d ago</span><span>Today: ${trend[trend.length-1]}</span></div>
+    </div>`;
+  });
+  document.getElementById('pane-trends').innerHTML = html;
+}
+
+// ─────────────────────────────────────
+// ENFORCEMENT LIST
+// ─────────────────────────────────────
+function renderEnforcementList() {
+  const items = ENFORCEMENT_BY_CITY[currentCity]||[];
+  let html='';
+  items.forEach((en,i)=>{
+    html+=`<div class="enf-item ${en.priority}" onclick="showEnforcementDetail(${i})">
+      <div class="enf-row">
+        <div class="enf-name">${en.name}</div>
+        <div class="enf-rank">#${i+1}</div>
+      </div>
+      <div class="enf-type">${en.type}</div>
+      <div class="enf-impact">Est. impact: ${en.impact}</div>
+    </div>`;
+  });
+  document.getElementById('enf-list').innerHTML = html;
+}
+
+// ─────────────────────────────────────
+// ENFORCEMENT DETAIL MODAL
+// ─────────────────────────────────────
+function showEnforcementDetail(idx) {
+  const items = ENFORCEMENT_BY_CITY[currentCity]||[];
+  const en = items[idx];
+  if(!en) return;
+  document.getElementById('modal-title').textContent = en.name;
+  document.getElementById('modal-sub').textContent = en.type + ' — Priority: ' + en.priority.toUpperCase();
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-section">
+      <h4>Evidence summary</h4>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:13px;color:var(--text2);line-height:1.6;border-left:3px solid var(--warn)">${en.evidence}</div>
+    </div>
+    <div class="modal-section">
+      <h4>Recommended action</h4>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:13px;color:var(--text2);line-height:1.6;border-left:3px solid var(--accent)">${en.action}</div>
+    </div>
+    <div class="modal-section">
+      <h4>Estimated impact</h4>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:14px;font-weight:600;color:var(--good)">${en.impact}</div>
+    </div>
+    <div class="modal-section">
+      <h4>GPS coordinates</h4>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--accent)">${en.lat.toFixed(4)}°N, ${en.lng.toFixed(4)}°E</div>
+    </div>
+    <button class="pdf-btn" onclick="alert('PDF evidence report generated for: '+encodeURIComponent('${en.name}')+' — in a production build this would download a formatted PDF with all sensor logs, satellite imagery, and regulatory references.')">Download Evidence Report PDF</button>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal(e) {
+  if(e.target===document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ─────────────────────────────────────
+// LAYER SWITCHER
+// ─────────────────────────────────────
+function setLayer(layer, btn) {
+  currentLayer = layer;
+  document.querySelectorAll('.map-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderStations();
+
+  // Update legend
+  const leg = document.getElementById('legend');
+  if(layer==='enforcement'){
+    leg.innerHTML=`<div class="leg-title">Enforcement priority</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ef4444"></div><div class="leg-label">High priority</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div><div class="leg-label">Medium priority</div></div>`;
+  } else if(layer==='forecast') {
+    const stations=STATIONS_BY_CITY[currentCity]||[];
+    if(stations.length>0) updateForecastChart(stations.reduce((a,b)=>a.aqi+b.aqi)/stations.length);
+    leg.innerHTML=`<div class="leg-title">AQI Index</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#10b981"></div><div class="leg-label">Good (0–50)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div><div class="leg-label">Moderate (51–100)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f97316"></div><div class="leg-label">Poor (101–200)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ef4444"></div><div class="leg-label">Very Poor (201–300)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#9333ea"></div><div class="leg-label">Severe (300+)</div></div>`;
+  } else {
+    leg.innerHTML=`<div class="leg-title">AQI Index</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#10b981"></div><div class="leg-label">Good (0–50)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div><div class="leg-label">Moderate (51–100)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f97316"></div><div class="leg-label">Poor (101–200)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ef4444"></div><div class="leg-label">Very Poor (201–300)</div></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#9333ea"></div><div class="leg-label">Severe (300+)</div></div>`;
+  }
+}
+
+// ─────────────────────────────────────
+// TIME SCRUBBER
+// ─────────────────────────────────────
+function scrubTime(val) {
+  forecastHour = parseInt(val);
+  const label = document.getElementById('scrub-label');
+  if(forecastHour===0){ label.textContent='Now'; return; }
+  const h = (new Date().getHours()+forecastHour)%24;
+  label.textContent = '+'+forecastHour+'h ('+h+':00)';
+  // Visually shift station AQI values by forecast multiplier
+  const stations = STATIONS_BY_CITY[currentCity]||[];
+  const peak = (h>=7&&h<=10)||(h>=17&&h<=20);
+  const night = h>=22||h<=5;
+  markers.forEach((m,i)=>{
+    const st=stations[i];
+    if(!st)return;
+    const mult = peak?1.18:night?0.78:1.0;
+    const fAqi = Math.max(20,Math.round(st.aqi*mult));
+    const col=aqiColor(fAqi);
+    m.setIcon(L.divIcon({
+      className:'',
+      html:`<div style="width:44px;height:44px;border-radius:50%;background:${col}22;border:2px solid ${col};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:${col};font-family:Inter,sans-serif;cursor:pointer;box-shadow:0 0 12px ${col}44">${fAqi}</div>`,
+      iconSize:[44,44],iconAnchor:[22,22]
+    }));
+  });
+}
+
+// ─────────────────────────────────────
+// CITY SWITCHER
+// ─────────────────────────────────────
+function switchCity(city) {
+  currentCity = city;
+  selectedStation = null;
+  const c = CITIES[city];
+  map.flyTo(c.center, c.zoom, {duration:1.2});
+  setTimeout(()=>{
+    renderStations();
+    renderStationList();
+    renderAlerts();
+    renderTrends();
+    renderEnforcementList();
+    document.getElementById('attr-ward').textContent='Select a station on the map';
+    document.getElementById('attr-aqi').textContent='--';
+    document.getElementById('attr-badge').textContent='--';
+    document.getElementById('attr-sources').innerHTML='';
+    document.getElementById('attr-text').textContent='Select a monitoring station to see source attribution and AI-generated insights.';
+    document.getElementById('fc-ward').textContent='city average';
+    const avgAqi=Math.round((STATIONS_BY_CITY[city]||[]).reduce((a,b)=>a+b.aqi,0)/((STATIONS_BY_CITY[city]||[]).length||1));
+    updateForecastChart(avgAqi);
+  },400);
+}
+
+// ─────────────────────────────────────
+// TAB SWITCHER
+// ─────────────────────────────────────
+function switchTab(tab, el) {
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pane-'+tab).classList.add('active');
+}
+
+// ─────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────
+window.addEventListener('load',()=>{
+  setTimeout(()=>{
+    document.getElementById('loading').style.opacity='0';
+    setTimeout(()=>document.getElementById('loading').style.display='none',500);
+    initMap();
+    renderStationList();
+    renderAlerts();
+    renderTrends();
+    renderEnforcementList();
+    // Default chart
+    const avgAqi = Math.round(STATIONS_BY_CITY.bengaluru.reduce((a,b)=>a+b.aqi,0)/STATIONS_BY_CITY.bengaluru.length);
+    updateForecastChart(avgAqi);
+    // Auto-refresh stats
+    setInterval(()=>{ document.getElementById('stat-time').textContent=now(); },30000);
+  },2000);
+});
+</script>
+</body>
+</html>
